@@ -11,6 +11,7 @@ import java.security.MessageDigest;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
@@ -26,6 +27,7 @@ class FlywayMigrationCharacterizationTest {
     private static final String IMAGE = "postgres:17-alpine";
     private static final String V1_SHA_256 =
             "73e830c03f131def50bdfdff708f483c9d76de2042928467dc19bc74f20ec5a6";
+    private static final int A4_V1_BASELINE_CHECKSUM = 811365365;
 
     @Test
     void appliesV1OnceAndMatchesTheSemanticPostgres17Schema() throws Exception {
@@ -70,6 +72,7 @@ class FlywayMigrationCharacterizationTest {
                 assertEquals("V1__create_work_orders.sql", history.get(0).script());
                 assertTrue(history.get(0).success());
                 assertNotNull(history.get(0).checksum());
+                assertEquals(A4_V1_BASELINE_CHECKSUM, history.get(0).checksum());
             }
         }
     }
@@ -85,8 +88,11 @@ class FlywayMigrationCharacterizationTest {
             try (var connection = connection(postgres);
                  var statement = connection.prepareStatement("""
                          INSERT INTO work_orders (
-                             id, tenant_id, title, priority, status, created_at, updated_at
-                         ) VALUES (?, 'acme', 'Existing row', 'HIGH', 'OPEN',
+                             id, tenant_id, title, description, priority, status,
+                             assignee_email, due_at, created_at, updated_at
+                         ) VALUES (?, 'acme', 'Existing row',
+                                   'Seeded before the Flyway rerun', 'HIGH', 'OPEN',
+                                   'oncall@example.com', '2026-07-01T09:30:00Z',
                                    '2026-06-27T12:00:00Z', '2026-06-27T12:00:00Z')
                          """)) {
                 assertPostgres17(connection);
@@ -95,18 +101,34 @@ class FlywayMigrationCharacterizationTest {
             }
 
             List<HistoryRow> before;
-            String rowBefore;
+            WorkOrderRow rowBefore;
             try (var connection = connection(postgres)) {
                 before = history(connection);
-                rowBefore = existingRow(connection, id);
+                assertEquals(1, before.size());
+                assertNotNull(before.get(0).checksum());
+                assertEquals(A4_V1_BASELINE_CHECKSUM, before.get(0).checksum());
+                rowBefore = workOrderRow(connection, id);
             }
+
+            assertEquals(new WorkOrderRow(
+                    id,
+                    "acme",
+                    "Existing row",
+                    "Seeded before the Flyway rerun",
+                    "OPEN",
+                    "HIGH",
+                    "oncall@example.com",
+                    OffsetDateTime.parse("2026-07-01T09:30:00Z"),
+                    OffsetDateTime.parse("2026-06-27T12:00:00Z"),
+                    OffsetDateTime.parse("2026-06-27T12:00:00Z"),
+                    0L), rowBefore);
 
             assertEquals(0, flyway.migrate().migrationsExecuted);
             flyway.validate();
 
             try (var connection = connection(postgres)) {
                 assertEquals(before, history(connection));
-                assertEquals(rowBefore, existingRow(connection, id));
+                assertEquals(rowBefore, workOrderRow(connection, id));
                 assertEquals(1L, scalarLong(connection,
                         "SELECT count(*) FROM flyway_schema_history WHERE success"));
             }
@@ -208,26 +230,37 @@ class FlywayMigrationCharacterizationTest {
             while (result.next()) {
                 rows.add(new HistoryRow(
                         result.getInt(1), result.getString(2), result.getString(3),
-                        result.getString(4), result.getString(5), result.getInt(6),
+                        result.getString(4), result.getString(5),
+                        result.getObject(6, Integer.class),
                         result.getString(7), result.getBoolean(8)));
             }
         }
         return rows;
     }
 
-    private static String existingRow(Connection connection, UUID id) throws Exception {
+    private static WorkOrderRow workOrderRow(Connection connection, UUID id) throws Exception {
         try (var statement = connection.prepareStatement("""
-                SELECT id, tenant_id, title, priority, status, version,
-                       created_at::text, updated_at::text
+                SELECT id, tenant_id, title, description, status, priority,
+                       assignee_email, due_at, created_at, updated_at, version
                 FROM work_orders WHERE id = ?
                 """)) {
             statement.setObject(1, id);
             try (var result = statement.executeQuery()) {
                 assertTrue(result.next());
-                return String.join("|",
-                        result.getString(1), result.getString(2), result.getString(3),
-                        result.getString(4), result.getString(5), result.getString(6),
-                        result.getString(7), result.getString(8));
+                Long version = result.getObject(11, Long.class);
+                assertNotNull(version);
+                return new WorkOrderRow(
+                        result.getObject(1, UUID.class),
+                        result.getString(2),
+                        result.getString(3),
+                        result.getString(4),
+                        result.getString(5),
+                        result.getString(6),
+                        result.getString(7),
+                        result.getObject(8, OffsetDateTime.class),
+                        result.getObject(9, OffsetDateTime.class),
+                        result.getObject(10, OffsetDateTime.class),
+                        version);
             }
         }
     }
@@ -266,8 +299,22 @@ class FlywayMigrationCharacterizationTest {
             String description,
             String type,
             String script,
-            int checksum,
+            Integer checksum,
             String installedOn,
             boolean success) {
+    }
+
+    private record WorkOrderRow(
+            UUID id,
+            String tenantId,
+            String title,
+            String description,
+            String status,
+            String priority,
+            String assigneeEmail,
+            OffsetDateTime dueAt,
+            OffsetDateTime createdAt,
+            OffsetDateTime updatedAt,
+            long version) {
     }
 }
