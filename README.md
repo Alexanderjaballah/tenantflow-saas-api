@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Daniel349167/tenantflow-saas-api/actions/workflows/ci.yml/badge.svg)](https://github.com/Daniel349167/tenantflow-saas-api/actions/workflows/ci.yml)
 
-Secure multi-tenant work-order API built with Java 17, Spring Boot, PostgreSQL,
+Secure multi-tenant work-order API built with Java 21, Spring Boot, PostgreSQL,
 Keycloak and hexagonal architecture.
 
 This personal portfolio project demonstrates tenant isolation, OAuth2/OIDC,
@@ -38,7 +38,7 @@ The decisions and tradeoffs are documented in [`docs/adr`](docs/adr).
 
 ## Stack
 
-- Java 17 and Spring Boot 3.5
+- Java 21 and Spring Boot 3.5
 - Spring Security OAuth2 Resource Server
 - Keycloak 26.6
 - PostgreSQL 17, Spring Data JPA and Flyway
@@ -49,7 +49,7 @@ The decisions and tradeoffs are documented in [`docs/adr`](docs/adr).
 
 ## Run locally
 
-Requirements: JDK 17+, Docker and Docker Compose.
+Requirements: JDK 21+, Docker and Docker Compose.
 
 ```bash
 ./gradlew clean build
