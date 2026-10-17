@@ -13,10 +13,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify checked-out revision
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "expected=${EXPECTED_SHA}"
+          echo "actual=${ACTUAL_SHA}"
+          test "${EXPECTED_SHA}" = "${ACTUAL_SHA}"
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
           cache: gradle
       - uses: gradle/actions/setup-gradle@v6
       - name: Test and build
@@ -27,3 +37,10 @@ jobs:
         with:
           name: test-reports
           path: build/reports/tests/
+      - name: Upload JUnit XML results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-xml-results
+          path: build/test-results/test/**/*.xml
+          if-no-files-found: error
